@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 330 38% 6%;
+    --foreground: 36 58% 91%;
+    --card: 324 51% 8%;
+    --card-foreground: 36 58% 91%;
+    --popover: 324 51% 8%;
+    --popover-foreground: 36 58% 91%;
+    --primary: 38 98% 47%;
+    --primary-foreground: 330 38% 6%;
+    --secondary: 324 40% 14%;
+    --secondary-foreground: 36 58% 91%;
+    --muted: 324 30% 16%;
+    --muted-foreground: 24 32% 68%;
+    --accent: 12 86% 55%;
+    --accent-foreground: 36 58% 95%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 330 30% 22%;
+    --input: 330 30% 22%;
+    --ring: 38 98% 47%;
+    --radius: 0.875rem;
+    --sidebar-background: 324 51% 8%;
+    --sidebar-foreground: 36 58% 91%;
+    --sidebar-primary: 38 98% 47%;
+    --sidebar-primary-foreground: 330 38% 6%;
+    --sidebar-accent: 324 40% 14%;
+    --sidebar-accent-foreground: 36 58% 91%;
+    --sidebar-border: 330 30% 22%;
+    --sidebar-ring: 38 98% 47%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-ink text-cream font-sans antialiased;
+    background-image:
+      radial-gradient(84.3% 84.3% at 50% 12.67%, rgba(22, 7, 16, 0) 28.5%, rgba(22, 7, 16, 0.67) 74.11%, #160710 98%),
+      radial-gradient(1200px 600px at 80% -10%, rgba(238, 155, 1, 0.10), transparent 60%),
+      radial-gradient(1000px 700px at 10% 110%, rgba(214, 51, 108, 0.10), transparent 60%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: #ee9b01;
+    color: #160710;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #160710;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #ee9b01, #ef3f28);
+    border-radius: 8px;
+    border: 2px solid #160710;
+  }
+}
+
+@layer components {
+  /* Signature saffron → sindoor gradient text */
+  .text-gradient {
+    background: linear-gradient(92deg, #ee9b01 8%, #ef3f28 55%, #d6336c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .text-gradient-gold {
+    background: linear-gradient(92deg, #e8b54d, #ee9b01 60%, #ef3f28);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Gradient border vessel — 1px stitched edge via double background */
+  .vessel {
+    position: relative;
+    background:
+      linear-gradient(#1f0a18, #1f0a18) padding-box,
+      linear-gradient(135deg, rgba(238, 155, 1, 0.7), rgba(239, 63, 40, 0.55) 45%, rgba(214, 51, 108, 0.45)) border-box;
+    border: 1px solid transparent;
+  }
+  .vessel-soft {
+    background:
+      linear-gradient(rgba(31, 10, 24, 0.82), rgba(31, 10, 24, 0.82)) padding-box,
+      linear-gradient(135deg, rgba(238, 155, 1, 0.4), rgba(239, 63, 40, 0.28) 50%, rgba(214, 51, 108, 0.24)) border-box;
+    border: 1px solid transparent;
+  }
+
+  /* Woven cloth grain overlay (applied via inline SVG data-uri) */
+  .fabric {
+    position: relative;
+  }
+  .fabric::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.9'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+  }
+
+  /* Loading shimmer thread */
+  .thread-shimmer {
+    background: linear-gradient(
+      100deg,
+      rgba(238, 155, 1, 0.12) 30%,
+      rgba(247, 236, 218, 0.35) 50%,
+      rgba(238, 155, 1, 0.12) 70%
+    );
+    background-size: 200% 100%;
+  }
+
+  /* Display type treatment */
+  .display-tight {
+    letter-spacing: -0.035em;
+    line-height: 0.94;
+  }
+  .label-stitch {
+    @apply font-mono text-[11px] uppercase tracking-[0.28em] text-sand;
+  }
+}
