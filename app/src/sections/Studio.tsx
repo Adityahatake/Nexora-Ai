@@ -12,9 +12,11 @@ import {
   UploadCloud,
   Server,
   Key,
+  Target,
 } from 'lucide-react'
 import { Mandala, StitchDivider } from '@/components/decor'
 import { buildBook, composeAnswer, extractPages, type Answer, type BookDoc } from '@/lib/rag'
+import QuizArena from '@/components/quiz/QuizArena'
 import {
   getBackendStatus,
   uploadBookBackend,
@@ -104,6 +106,7 @@ export default function Studio() {
   const [asking, setAsking] = useState(false)
   const [freshId, setFreshId] = useState<number | null>(null)
   const [openCtx, setOpenCtx] = useState<number | null>(null)
+  const [studioTab, setStudioTab] = useState<'chat' | 'quiz'>('chat')
 
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -283,6 +286,17 @@ export default function Studio() {
       )
     },
     [book, woven, asking, backend],
+  )
+
+  const handleOpenChatWithPrompt = useCallback(
+    (prompt: string) => {
+      setStudioTab('chat')
+      setInput(prompt)
+      window.setTimeout(() => {
+        void ask(prompt)
+      }, 250)
+    },
+    [ask],
   )
 
   useEffect(() => {
@@ -514,17 +528,28 @@ export default function Studio() {
                   )}
 
                   {woven && (
-                    <div className="mt-6 flex items-center justify-between gap-3">
-                      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-peacock">
-                        {book.chunks.length} threads woven · ready to converse
-                      </p>
+                    <div className="mt-6 flex flex-col gap-3">
                       <button
-                        onClick={() => inputRef.current?.click()}
-                        className="flex items-center gap-1.5 rounded-full border border-saffron/40 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-saffron transition-colors hover:bg-saffron/10"
+                        onClick={() => setStudioTab('quiz')}
+                        className="group flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-saffron via-sindoor to-rani py-3.5 px-4 font-display text-sm font-semibold text-ink shadow-glow transition-transform duration-300 hover:scale-[1.02] active:scale-95"
                       >
-                        <RefreshCcw className="h-3 w-3" />
-                        new book
+                        <Target className="h-4 w-4" />
+                        <span>Generate Concept Test & Quizzes</span>
+                        <Sparkles className="h-3.5 w-3.5 text-cream transition-transform group-hover:rotate-12" />
                       </button>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-peacock">
+                          {book.chunks.length} threads woven · ready to converse
+                        </p>
+                        <button
+                          onClick={() => inputRef.current?.click()}
+                          className="flex items-center gap-1.5 rounded-full border border-saffron/40 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-saffron transition-colors hover:bg-saffron/10"
+                        >
+                          <RefreshCcw className="h-3 w-3" />
+                          new book
+                        </button>
+                      </div>
                     </div>
                   )}
                 </motion.div>
@@ -532,181 +557,230 @@ export default function Studio() {
             </AnimatePresence>
           </motion.div>
 
-          {/* ------------------------- right: chat ------------------------- */}
+          {/* ------------------------- right: chat / quiz arena ------------------------- */}
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-60px' }}
             transition={{ duration: 0.9, delay: 0.12, ease }}
-            className="vessel flex min-h-[560px] flex-col overflow-hidden rounded-[2rem]"
+            className="vessel flex min-h-[580px] flex-col overflow-hidden rounded-[2rem]"
           >
-            {/* chat header */}
-            <div className="flex items-center gap-3 border-b border-saffron/15 bg-white/[0.03] px-6 py-4">
-              <Mandala size={30} strokeWidth={2.4} />
-              <div>
-                <p className="font-display text-base font-semibold text-cream">Conversational Loom</p>
-                <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-sand">
-                  {woven ? 'tapestry threaded · ask away' : 'awaiting a woven book'}
-                </p>
-              </div>
-              <BookOpenText className="ml-auto h-4 w-4 text-saffron/70" />
-            </div>
-
-            {/* messages */}
-            <div ref={scrollRef} className="fabric flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-6">
-              {messages.length === 0 && !asking && (
-                <div className="flex h-full min-h-[380px] flex-col items-center justify-center text-center">
-                  <Mandala size={120} className="opacity-40 animate-spin-slow" />
-                  <p className="mt-6 max-w-xs font-display text-lg italic text-cream/70">
-                    {woven
-                      ? 'The threads are listening. Ask your book anything.'
-                      : 'Upload a book and weave its tapestry to begin the conversation.'}
-                  </p>
-                  {woven && (
-                    <div className="mt-6 flex flex-wrap justify-center gap-2">
-                      {SUGGESTIONS.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => ask(s)}
-                          className="rounded-full border border-gold/30 px-3.5 py-1.5 text-xs text-gold transition-colors hover:bg-gold/10"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <AnimatePresence initial={false}>
-                {messages.map((m) =>
-                  m.role === 'user' ? (
-                    <motion.div
-                      key={m.id}
-                      initial={{ opacity: 0, y: 24 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.6, ease }}
-                      className="flex justify-end"
-                    >
-                      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-gradient-to-r from-saffron to-sindoor px-4 py-2.5 text-sm font-medium text-ink shadow-glow">
-                        {m.text}
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key={m.id}
-                      initial={{ opacity: 0, y: 24 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.6, ease }}
-                      className="flex gap-3"
-                    >
-                      <Mandala size={26} strokeWidth={2.6} className="mt-1 shrink-0" />
-                      <div className="vessel-soft max-w-[88%] rounded-2xl rounded-tl-sm px-4 py-3">
-                        <AnswerBody msg={m} fresh={m.id === freshId} />
-
-                        {m.answer && m.answer.retrieved && m.answer.retrieved.length > 0 && (
-                          <div className="mt-3 border-t border-saffron/15 pt-2.5">
-                            <button
-                              onClick={() => setOpenCtx(openCtx === m.id ? null : m.id)}
-                              className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-saffron/90 transition-colors hover:text-gold"
-                            >
-                              <ChevronDown
-                                className={`h-3.5 w-3.5 transition-transform duration-300 ${
-                                  openCtx === m.id ? 'rotate-180' : ''
-                                }`}
-                              />
-                              retrieved threads · {m.answer.retrieved.length}
-                            </button>
-                            <AnimatePresence initial={false}>
-                              {openCtx === m.id && (
-                                <motion.div
-                                  initial={{ height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={{ height: 0, opacity: 0 }}
-                                  transition={{ duration: 0.45, ease }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="mt-3 space-y-2.5">
-                                    {m.answer.retrieved.map((r, i) => (
-                                      <div key={i} className="rounded-xl bg-white/[0.04] p-3">
-                                        <div className="mb-1.5 flex items-center gap-2">
-                                          <span className="rounded-full border border-gold/40 px-2 py-0.5 font-mono text-[9px] text-gold">
-                                            p. {r.chunk.page + 1}
-                                          </span>
-                                          <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
-                                            <div
-                                              className="h-full rounded-full bg-gradient-to-r from-saffron to-rani"
-                                              style={{ width: `${Math.round(r.score * 100)}%` }}
-                                            />
-                                          </div>
-                                          <span className="font-mono text-[9px] text-sand">
-                                            {Math.round(r.score * 100)}%
-                                          </span>
-                                        </div>
-                                        <p className="line-clamp-3 text-xs leading-relaxed text-sand">
-                                          {r.chunk.text}
-                                        </p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        )}
-
-                        {m.answer && !m.answer.found && (
-                          <p className="mt-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-sand/70">
-                            beyond the tapestry — try other words
-                          </p>
-                        )}
-                      </div>
-                    </motion.div>
-                  ),
-                )}
-              </AnimatePresence>
-
-              {asking && (
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex gap-3"
-                >
-                  <Mandala size={26} strokeWidth={2.6} className="mt-1 shrink-0 animate-spin-slow" />
-                  <div className="vessel-soft rounded-2xl rounded-tl-sm px-4 py-3">
-                    <p className="thread-shimmer animate-shimmer rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.25em] text-cream/80">
-                      tracing threads through the tapestry…
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-
-            {/* input */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                void ask(input)
-              }}
-              className="border-t border-saffron/15 bg-white/[0.03] p-4"
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  disabled={!woven || asking}
-                  placeholder={woven ? 'Ask your book anything…' : 'Weave a book first…'}
-                  className="flex-1 rounded-full border border-saffron/25 bg-ink/60 px-5 py-3 text-sm text-cream placeholder:text-sand/50 focus:border-saffron/60 focus:outline-none focus:ring-2 focus:ring-saffron/20 disabled:opacity-50"
-                />
+            {/* studio tab header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-saffron/15 bg-white/[0.03] px-5 py-3.5 sm:px-6">
+              <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 p-1">
                 <button
-                  type="submit"
-                  disabled={!woven || asking || !input.trim()}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-saffron to-sindoor text-ink shadow-glow transition-transform duration-300 hover:scale-110 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+                  type="button"
+                  onClick={() => setStudioTab('chat')}
+                  className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 font-display text-xs font-semibold transition-all ${
+                    studioTab === 'chat'
+                      ? 'bg-gradient-to-r from-saffron to-sindoor text-ink shadow-glow'
+                      : 'text-sand hover:text-cream'
+                  }`}
                 >
-                  <Send className="h-4 w-4" />
+                  <BookOpenText className="h-3.5 w-3.5" />
+                  <span>Conversational Loom</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStudioTab('quiz')}
+                  className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 font-display text-xs font-semibold transition-all ${
+                    studioTab === 'quiz'
+                      ? 'bg-gradient-to-r from-saffron to-peacock text-ink shadow-glow'
+                      : 'text-sand hover:text-cream'
+                  }`}
+                >
+                  <Target className="h-3.5 w-3.5" />
+                  <span>Concept Test & Quizzes</span>
+                  <span className="rounded-full bg-rani/30 px-1.5 py-0.2 font-mono text-[9px] text-cream">AI</span>
                 </button>
               </div>
-            </form>
+
+              <div className="hidden sm:flex items-center gap-2">
+                <Mandala size={20} strokeWidth={2.4} />
+                <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-sand">
+                  {studioTab === 'chat'
+                    ? (woven ? 'tapestry threaded' : 'awaiting woven book')
+                    : (woven ? 'ready to test' : 'weave book to test')}
+                </p>
+              </div>
+            </div>
+
+            {studioTab === 'quiz' ? (
+              <div className="flex-1 flex flex-col min-h-[500px]">
+                <QuizArena
+                  book={book}
+                  woven={woven}
+                  backend={backend}
+                  onOpenChatWithPrompt={handleOpenChatWithPrompt}
+                />
+              </div>
+            ) : (
+              <>
+                {/* messages */}
+                <div ref={scrollRef} className="fabric flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-6">
+                  {messages.length === 0 && !asking && (
+                    <div className="flex h-full min-h-[380px] flex-col items-center justify-center text-center">
+                      <Mandala size={120} className="opacity-40 animate-spin-slow" />
+                      <p className="mt-6 max-w-xs font-display text-lg italic text-cream/70">
+                        {woven
+                          ? 'The threads are listening. Ask your book anything or take a Concept Test.'
+                          : 'Upload a book and weave its tapestry to begin the conversation.'}
+                      </p>
+                      {woven && (
+                        <div className="mt-6 flex flex-wrap justify-center gap-2">
+                          {SUGGESTIONS.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => ask(s)}
+                              className="rounded-full border border-gold/30 px-3.5 py-1.5 text-xs text-gold transition-colors hover:bg-gold/10"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => setStudioTab('quiz')}
+                            className="flex items-center gap-1.5 rounded-full border border-saffron/40 bg-saffron/10 px-3.5 py-1.5 text-xs font-semibold text-saffron transition-colors hover:bg-saffron/20"
+                          >
+                            <Target className="h-3 w-3" />
+                            🎯 Test My Understanding
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <AnimatePresence initial={false}>
+                    {messages.map((m) =>
+                      m.role === 'user' ? (
+                        <motion.div
+                          key={m.id}
+                          initial={{ opacity: 0, y: 24 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.6, ease }}
+                          className="flex justify-end"
+                        >
+                          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-gradient-to-r from-saffron to-sindoor px-4 py-2.5 text-sm font-medium text-ink shadow-glow">
+                            {m.text}
+                          </div>
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key={m.id}
+                          initial={{ opacity: 0, y: 24 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.6, ease }}
+                          className="flex gap-3"
+                        >
+                          <Mandala size={26} strokeWidth={2.6} className="mt-1 shrink-0" />
+                          <div className="vessel-soft max-w-[88%] rounded-2xl rounded-tl-sm px-4 py-3">
+                            <AnswerBody msg={m} fresh={m.id === freshId} />
+
+                            {m.answer && m.answer.retrieved && m.answer.retrieved.length > 0 && (
+                              <div className="mt-3 border-t border-saffron/15 pt-2.5">
+                                <button
+                                  onClick={() => setOpenCtx(openCtx === m.id ? null : m.id)}
+                                  className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-saffron/90 transition-colors hover:text-gold"
+                                >
+                                  <ChevronDown
+                                    className={`h-3.5 w-3.5 transition-transform duration-300 ${
+                                      openCtx === m.id ? 'rotate-180' : ''
+                                    }`}
+                                  />
+                                  retrieved threads · {m.answer.retrieved.length}
+                                </button>
+                                <AnimatePresence initial={false}>
+                                  {openCtx === m.id && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.45, ease }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="mt-3 space-y-2.5">
+                                        {m.answer.retrieved.map((r, i) => (
+                                          <div key={i} className="rounded-xl bg-white/[0.04] p-3">
+                                            <div className="mb-1.5 flex items-center gap-2">
+                                              <span className="rounded-full border border-gold/40 px-2 py-0.5 font-mono text-[9px] text-gold">
+                                                p. {r.chunk.page + 1}
+                                              </span>
+                                              <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+                                                <div
+                                                  className="h-full rounded-full bg-gradient-to-r from-saffron to-rani"
+                                                  style={{ width: `${Math.round(r.score * 100)}%` }}
+                                                />
+                                              </div>
+                                              <span className="font-mono text-[9px] text-sand">
+                                                {Math.round(r.score * 100)}%
+                                              </span>
+                                            </div>
+                                            <p className="line-clamp-3 text-xs leading-relaxed text-sand">
+                                              {r.chunk.text}
+                                            </p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            )}
+
+                            {m.answer && !m.answer.found && (
+                              <p className="mt-2.5 font-mono text-[9px] uppercase tracking-[0.2em] text-sand/70">
+                                beyond the tapestry — try other words
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      ),
+                    )}
+                  </AnimatePresence>
+
+                  {asking && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex gap-3"
+                    >
+                      <Mandala size={26} strokeWidth={2.6} className="mt-1 shrink-0 animate-spin-slow" />
+                      <div className="vessel-soft rounded-2xl rounded-tl-sm px-4 py-3">
+                        <p className="thread-shimmer animate-shimmer rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.25em] text-cream/80">
+                          tracing threads through the tapestry…
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* input */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void ask(input)
+                  }}
+                  className="border-t border-saffron/15 bg-white/[0.03] p-4"
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      disabled={!woven || asking}
+                      placeholder={woven ? 'Ask your book anything…' : 'Weave a book first…'}
+                      className="flex-1 rounded-full border border-saffron/25 bg-ink/60 px-5 py-3 text-sm text-cream placeholder:text-sand/50 focus:border-saffron/60 focus:outline-none focus:ring-2 focus:ring-saffron/20 disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!woven || asking || !input.trim()}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-saffron to-sindoor text-ink shadow-glow transition-transform duration-300 hover:scale-110 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </motion.div>
         </div>
       </div>

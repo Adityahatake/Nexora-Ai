@@ -118,3 +118,45 @@ export async function askBackend(docId: string | undefined, question: string): P
 export async function resetBackend(): Promise<void> {
   await fetch(`${API_BASE}/api/reset`, { method: 'POST' }).catch(() => {})
 }
+
+export interface QuizGenerateParams {
+  docId?: string
+  topic?: string
+  count?: number
+  quizType?: 'mixed' | 'mcq' | 'fill_in_the_blank'
+  difficulty?: 'easy' | 'medium' | 'hard'
+}
+
+/** Request test generation from the backend LLM */
+export async function generateQuizBackend(params: QuizGenerateParams): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/quiz/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: `Quiz generation failed: ${res.statusText}` }))
+    throw new Error(errorData.detail || `Quiz generation failed (${res.status})`)
+  }
+  return await res.json()
+}
+
+/** Request AI semantic validation for an answer */
+export async function validateQuizBackend(params: {
+  question: string
+  questionType: string
+  expectedAnswer: string
+  userAnswer: string
+  context?: string
+}): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/quiz/validate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: `Validation failed: ${res.statusText}` }))
+    throw new Error(errorData.detail || `Validation failed (${res.status})`)
+  }
+  return await res.json()
+}

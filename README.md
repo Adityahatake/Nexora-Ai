@@ -59,6 +59,12 @@ Every AI response is strictly grounded in the manuscript context, showing exact 
   - **Chroma Vector Store**: Persistent local vector collection (`book_collection`).
   - **MMR Retrieval**: Maximal Marginal Relevance search (`k=4`, `fetch_k=10`, `lambda_mult=0.5`) prevents repetitive context and ensures broad source coverage.
   - **Groq LLM Acceleration**: Lightning-fast reasoning and response composition with `ChatGroq`.
+- **🎯 Concept Mastery & AI Test Engine (New!)**:
+  - **Generate Tests On-Demand**: Choose your topic focus (specific chapter or entire book), difficulty level (Apprentice, Weaver, Sage), and question count (3 to 10 questions).
+  - **Multiple Choice Questions (MCQs)**: Contextual 4-choice questions with plausible distractors grounded directly in the text and source citations.
+  - **Fill-in-the-Blank with AI Semantic Validation**: Cloze questions with missing core concept blanks. The AI validates answers semantically, rewarding correct concepts, acceptable synonyms, and partial understanding with insightful pedagogical feedback!
+  - **Comprehensive Mastery Scorecard**: Radial score gauge, tier badge (*Master Sage*, *Expert Weaver*, *Apprentice*, *Seeker*), question-by-question breakdown, and one-click discussion of mistakes with the Conversational Loom.
+  - **Offline & Online Resilience**: Functions 100% offline via client-side linguistic heuristics when API keys are absent, and seamlessly scales to Groq LLM intelligence when keys are provided!
 - **🎨 Artisan Frontend Aesthetics**:
   - Handcrafted luxury Indian theme with jewel tones (Saffron, Gold, Sindoor, Peacock).
   - Smooth physics-based animations via Framer Motion.

@@ -2,6 +2,9 @@ import os
 import shutil
 import tempfile
 import uuid
+import re
+import json
+import random
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
@@ -15,7 +18,10 @@ from pydantic import BaseModel
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+try:
+    from langchain_chroma import Chroma
+except ImportError:
+    from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import uvicorn
@@ -108,6 +114,20 @@ class IndexRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     docId: Optional[str] = None
+
+class QuizGenerateRequest(BaseModel):
+    docId: Optional[str] = None
+    topic: Optional[str] = None
+    count: int = 5
+    quizType: str = "mixed"  # "mixed" | "mcq" | "fill_in_the_blank"
+    difficulty: str = "medium"  # "easy" | "medium" | "hard"
+
+class QuizValidateRequest(BaseModel):
+    question: str
+    questionType: str  # "mcq" | "fill_in_the_blank"
+    expectedAnswer: str
+    userAnswer: str
+    context: Optional[str] = None
 
 # -------------------- API Endpoints --------------------
 @app.get("/api/health")
@@ -378,6 +398,409 @@ def reset_database(req: Optional[ResetRequest] = None):
     if os.path.exists(DB_PATH):
         shutil.rmtree(DB_PATH, ignore_errors=True)
     return {"message": "Vector database reset successfully.", "status": "reset"}
+
+# -------------------- Quiz & AI Validation Endpoints --------------------
+
+def validate_answer_heuristically(
+    question: str, question_type: str, expected: str, user: str, context: Optional[str] = None
+) -> Dict[str, Any]:
+    """Client/Server semantic fallback evaluator when LLM API keys are absent."""
+    norm_user = re.sub(r'[^\w\s]', '', (user or "").lower()).strip()
+    norm_exp = re.sub(r'[^\w\s]', '', (expected or "").lower()).strip()
+
+    if not norm_user:
+        return {
+            "is_correct": False,
+            "score": 0,
+            "verdict": "incorrect",
+            "feedback": "No answer was provided. Give it your best attempt!",
+            "explanation": f"The document specifically details: '{expected}'."
+        }
+
+    if question_type == "mcq":
+        is_exact = norm_user == norm_exp or user.strip().lower() == expected.strip().lower()
+        return {
+            "is_correct": is_exact,
+            "score": 100 if is_exact else 0,
+            "verdict": "correct" if is_exact else "incorrect",
+            "feedback": (
+                "✦ Correct! You accurately identified the exact concept from the text."
+                if is_exact
+                else f"Incorrect. The correct option is '{expected}'."
+            ),
+            "explanation": f"The manuscript directly supports '{expected}'."
+        }
+
+    # Fill-in-the-Blank Semantic checks
+    if norm_user == norm_exp:
+        return {
+            "is_correct": True,
+            "score": 100,
+            "verdict": "correct",
+            "feedback": f"✦ Spot on! '{user.strip()}' is the precise terminology from the manuscript.",
+            "explanation": f"The exact phrasing in the text is '{expected}'."
+        }
+
+    if norm_user in norm_exp and len(norm_user) >= 4:
+        ratio = round((len(norm_user) / max(1, len(norm_exp))) * 100)
+        score = max(70, min(90, ratio))
+        return {
+            "is_correct": score >= 75,
+            "score": score,
+            "verdict": "correct" if score >= 80 else "partially_correct",
+            "feedback": f"✦ Conceptually aligned! You captured the core idea ('{user.strip()}'). The full term in the text is '{expected}'.",
+            "explanation": f"The manuscript refers to '{expected}'."
+        }
+
+    if norm_exp in norm_user:
+        return {
+            "is_correct": True,
+            "score": 90,
+            "verdict": "correct",
+            "feedback": f"✦ Well articulated! Your answer contains the target key concept '{expected}'.",
+            "explanation": f"The manuscript highlights '{expected}'."
+        }
+
+    # Token overlap
+    user_words = set(w for w in norm_user.split() if len(w) > 3)
+    exp_words = set(w for w in norm_exp.split() if len(w) > 3)
+    overlap = len(user_words.intersection(exp_words))
+    if exp_words and overlap > 0:
+        score = round((overlap / len(exp_words)) * 75)
+        return {
+            "is_correct": score >= 60,
+            "score": score,
+            "verdict": "partially_correct" if score >= 60 else "incorrect",
+            "feedback": f"✦ Partial recall! You captured {overlap} of the key terms, but the complete concept is '{expected}'.",
+            "explanation": f"The complete phrase in the text is '{expected}'."
+        }
+
+    return {
+        "is_correct": False,
+        "score": 15,
+        "verdict": "incorrect",
+        "feedback": f"The manuscript specifies '{expected}'. Review the context passage to reinforce this concept.",
+        "explanation": f"The manuscript context highlights '{expected}'."
+    }
+
+def generate_quiz_heuristically(
+    doc_id: Optional[str], topic: Optional[str], count: int, quiz_type: str, difficulty: str
+) -> Dict[str, Any]:
+    """Generates MCQs and Fill-in-the-Blank questions directly from document text chunks."""
+    doc_name = "Knowledge Tapestry"
+    chunks_text: List[Dict[str, Any]] = []
+
+    if doc_id and doc_id in DOCUMENTS:
+        doc_name = DOCUMENTS[doc_id]["filename"]
+        docs = DOCUMENTS[doc_id].get("docs", [])
+        for i, d in enumerate(docs):
+            chunks_text.append({
+                "text": d.page_content,
+                "page": d.metadata.get("page", i) + 1
+            })
+    elif DOCUMENTS:
+        first_id = list(DOCUMENTS.keys())[-1]
+        doc_name = DOCUMENTS[first_id]["filename"]
+        docs = DOCUMENTS[first_id].get("docs", [])
+        for i, d in enumerate(docs):
+            chunks_text.append({
+                "text": d.page_content,
+                "page": d.metadata.get("page", i) + 1
+            })
+
+    if not chunks_text:
+        # Generate generic seed questions
+        chunks_text = [
+            {"text": "The knowledge architecture relies on vector similarity embeddings and recursive character text splitting to maintain contextual continuity.", "page": 1},
+            {"text": "Retrieval Augmented Generation combines dense semantic search with high speed large language model reasoning.", "page": 2}
+        ]
+
+    # Collect vocabulary across chunks
+    all_words = set()
+    for c in chunks_text:
+        for w in re.findall(r'\b[A-Z][a-z]{3,}\b|\b[a-z]{5,}\b', c["text"]):
+            all_words.add(w)
+
+    distractor_pool = list(all_words)
+    if len(distractor_pool) < 10:
+        distractor_pool.extend(["Neural Network", "Vector Space", "Context Window", "Semantic Search", "Prompt Embedding"])
+
+    questions = []
+    used_sentences = set()
+
+    # Determine distribution
+    types = []
+    for i in range(count):
+        if quiz_type == "mcq":
+            types.append("mcq")
+        elif quiz_type == "fill_in_the_blank":
+            types.append("fill_in_the_blank")
+        else:
+            types.append("mcq" if i % 2 == 0 else "fill_in_the_blank")
+
+    sampled_chunks = chunks_text * max(1, (count // len(chunks_text)) + 2)
+    random.shuffle(sampled_chunks)
+
+    q_idx = 0
+    for chunk_item in sampled_chunks:
+        if q_idx >= count:
+            break
+
+        text = chunk_item["text"]
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if 35 <= len(s.strip()) <= 240]
+        if not sentences:
+            continue
+
+        for sentence in sentences:
+            if sentence in used_sentences or q_idx >= count:
+                continue
+
+            words = [w for w in re.findall(r'\b[A-Za-z]{4,}\b', sentence) if w.lower() not in {"this", "that", "with", "from", "have", "were", "been", "they", "their", "will", "would"}]
+            if not words:
+                continue
+
+            target_word = words[0]
+            used_sentences.add(sentence)
+            q_type = types[q_idx]
+            q_idx += 1
+
+            page_num = chunk_item.get("page", 1)
+
+            if q_type == "fill_in_the_blank":
+                masked = re.sub(rf'\b{re.escape(target_word)}\b', '_______________', sentence, count=1, flags=re.IGNORECASE)
+                questions.append({
+                    "id": f"fib_{q_idx}_{uuid.uuid4().hex[:6]}",
+                    "type": "fill_in_the_blank",
+                    "difficulty": difficulty,
+                    "question": f'Fill in the missing thread: "{masked}"',
+                    "correctAnswer": target_word,
+                    "acceptableAnswers": [target_word.lower(), target_word.upper()],
+                    "explanation": f'On page {page_num}, the text states: "{sentence}". The crucial concept is "{target_word}".',
+                    "sourceChunkText": text[:400],
+                    "page": page_num,
+                    "conceptTag": topic or "Core Concept"
+                })
+            else:
+                masked = re.sub(rf'\b{re.escape(target_word)}\b', '_____', sentence, count=1, flags=re.IGNORECASE)
+                distractors = [d for d in distractor_pool if d.lower() != target_word.lower()][:3]
+                while len(distractors) < 3:
+                    distractors.append(f"Concept-{len(distractors) + 1}")
+                options = [target_word] + distractors
+                random.shuffle(options)
+
+                questions.append({
+                    "id": f"mcq_{q_idx}_{uuid.uuid4().hex[:6]}",
+                    "type": "mcq",
+                    "difficulty": difficulty,
+                    "question": f'According to page {page_num}, which term completes this statement?\n"{masked}"',
+                    "options": options,
+                    "correctAnswer": target_word,
+                    "explanation": f'On page {page_num}: "{sentence}". Therefore, "{target_word}" is correct.',
+                    "sourceChunkText": text[:400],
+                    "page": page_num,
+                    "conceptTag": topic or "Textual Comprehension"
+                })
+
+    return {
+        "id": f"test_{uuid.uuid4().hex[:8]}",
+        "title": f"Mastery Test · {topic or doc_name}",
+        "topic": topic or "Manuscript Assessment",
+        "createdAt": int(uuid.uuid1().time),
+        "questions": questions,
+        "difficulty": difficulty,
+        "docName": doc_name,
+        "totalQuestions": len(questions)
+    }
+
+@app.post("/api/quiz/generate")
+def generate_quiz(req: QuizGenerateRequest):
+    """Generate comprehensive MCQs and Fill-in-the-Blank tests using Groq LLM or server-side heuristic fallback."""
+    topic = (req.topic or "").strip()
+    count = max(1, min(15, req.count))
+    quiz_type = req.quizType
+    difficulty = req.difficulty
+    doc_id = req.docId
+
+    has_groq = bool(os.getenv("GROQ_API_KEY"))
+
+    if has_groq:
+        try:
+            llm = get_llm()
+            embeddings = get_embeddings() if os.getenv("OPENAI_API_KEY") else None
+
+            context_snippets = []
+            if embeddings and os.path.exists(DB_PATH):
+                try:
+                    vectorstore = Chroma(
+                        persist_directory=DB_PATH,
+                        embedding_function=embeddings,
+                        collection_name=COLLECTION_NAME
+                    )
+                    query = topic if topic else "key principles definitions main concepts architecture"
+                    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+                    docs = retriever.invoke(query)
+                    context_snippets = [f"(p. {d.metadata.get('page', 1)}): {d.page_content}" for d in docs]
+                except Exception:
+                    pass
+
+            if not context_snippets and DOCUMENTS:
+                last_doc = list(DOCUMENTS.values())[-1]
+                docs = last_doc.get("docs", [])[:8]
+                context_snippets = [f"(p. {d.metadata.get('page', 1)}): {d.page_content}" for d in docs]
+
+            context_text = "\n\n".join(context_snippets) if context_snippets else "General manuscript knowledge."
+
+            prompt = ChatPromptTemplate.from_messages([
+                (
+                    "system",
+                    """You are an expert educational examiner and pedagogical assessor.
+Generate a high quality concept understanding test based ONLY on the provided context.
+Requirements:
+1. Question types: {quiz_type} ('mcq', 'fill_in_the_blank', or 'mixed').
+2. Difficulty: {difficulty}.
+3. Count: exactly {count} questions.
+4. For MCQ questions, provide 4 distinct plausible options, exactly one correct option, and 3 high-quality distractors.
+5. For Fill-in-the-Blank questions, provide a question sentence with '_______________' masking the focal concept.
+6. For every question, provide clear explanation citing the concept and page.
+
+Output strictly valid JSON and nothing else in this format:
+{{
+  "id": "quiz_generated",
+  "title": "Concept Mastery Test",
+  "topic": "{topic}",
+  "difficulty": "{difficulty}",
+  "docName": "Book Manuscript",
+  "totalQuestions": {count},
+  "questions": [
+    {{
+      "id": "q1",
+      "type": "mcq",
+      "difficulty": "{difficulty}",
+      "question": "string",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswer": "Exact correct string",
+      "explanation": "Why this is correct grounded in context",
+      "sourceChunkText": "excerpt quote",
+      "page": 1,
+      "conceptTag": "Definition"
+    }},
+    {{
+      "id": "q2",
+      "type": "fill_in_the_blank",
+      "difficulty": "{difficulty}",
+      "question": "The process of _______________ occurs in the system.",
+      "correctAnswer": "target_word",
+      "acceptableAnswers": ["target_word", "synonym"],
+      "explanation": "Why this is correct",
+      "sourceChunkText": "excerpt quote",
+      "page": 1,
+      "conceptTag": "Mechanism"
+    }}
+  ]
+}}
+"""
+                ),
+                (
+                    "human",
+                    """Context:
+{context}
+
+Generate the {count} questions now:"""
+                )
+            ])
+
+            response = llm.invoke(prompt.invoke({
+                "context": context_text,
+                "quiz_type": quiz_type,
+                "difficulty": difficulty,
+                "count": count,
+                "topic": topic or "General Book Understanding"
+            }))
+
+            raw_text = response.content if hasattr(response, "content") else str(response)
+            json_match = re.search(r'\{[\s\S]*\}', raw_text)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                if "questions" in parsed and len(parsed["questions"]) > 0:
+                    return parsed
+
+        except Exception as e:
+            print(f"LLM quiz generation exception, falling back to heuristic: {e}")
+
+    # Fallback to server-side heuristic generation
+    return generate_quiz_heuristically(doc_id, topic, count, quiz_type, difficulty)
+
+@app.post("/api/quiz/validate")
+def validate_quiz(req: QuizValidateRequest):
+    """Validate a student answer using Groq LLM semantic reasoning or server-side heuristic fallback."""
+    question = req.question.strip()
+    question_type = req.questionType
+    expected = req.expectedAnswer.strip()
+    user_ans = req.userAnswer.strip()
+    context = req.context or ""
+
+    has_groq = bool(os.getenv("GROQ_API_KEY"))
+
+    if has_groq and user_ans:
+        try:
+            llm = get_llm()
+            prompt = ChatPromptTemplate.from_messages([
+                (
+                    "system",
+                    """You are an objective AI tutor assessing whether a student understood a concept.
+Evaluate the student's answer against the target concept and context.
+Rules:
+- If exact match or clear synonym/equivalent, give score 90-100 and verdict 'correct'.
+- If partially correct or captures the main idea with minor gaps, give score 60-80 and verdict 'partially_correct'.
+- If incorrect, give score 0-40 and verdict 'incorrect'.
+- Provide 2 sentences of pedagogical feedback explaining what was good or what nuance was missed.
+
+Output strictly valid JSON:
+{{
+  "is_correct": boolean,
+  "score": integer (0 to 100),
+  "verdict": "correct" | "partially_correct" | "incorrect",
+  "feedback": "string",
+  "explanation": "string"
+}}
+"""
+                ),
+                (
+                    "human",
+                    """Question: {question}
+Question Type: {question_type}
+Expected Target Concept: {expected}
+Student's Answer: {user_ans}
+Context: {context}
+
+Grade now:"""
+                )
+            ])
+
+            response = llm.invoke(prompt.invoke({
+                "question": question,
+                "question_type": question_type,
+                "expected": expected,
+                "user_ans": user_ans,
+                "context": context
+            }))
+
+            raw_text = response.content if hasattr(response, "content") else str(response)
+            json_match = re.search(r'\{[\s\S]*\}', raw_text)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                return {
+                    "is_correct": parsed.get("is_correct", False),
+                    "score": parsed.get("score", 0),
+                    "verdict": parsed.get("verdict", "incorrect"),
+                    "feedback": parsed.get("feedback", "AI evaluated your answer."),
+                    "explanation": parsed.get("explanation", f"The manuscript specifies: '{expected}'.")
+                }
+        except Exception as e:
+            print(f"LLM validation error, falling back to heuristic: {e}")
+
+    # Fallback to server-side semantic heuristic
+    return validate_answer_heuristically(question, question_type, expected, user_ans, context)
 
 # -------------------- Serve React Frontend (Production) --------------------
 # If app/dist exists, serve the React build directly on the same port!
