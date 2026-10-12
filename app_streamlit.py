@@ -4,7 +4,7 @@ import tempfile
 import os
 import shutil
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter                                                             
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
@@ -13,7 +13,10 @@ from langchain_core.prompts import ChatPromptTemplate
 # -------------------- Setup --------------------
 load_dotenv()
 
-st.set_page_config(page_title="RAG Book Assistant")
+st.set_page_config(
+    page_title="RAG Book Assistant",
+    page_icon="Glowing Fiery Lotus Mandala.png"
+)
 
 st.title("📚 RAG Book Assistant")
 st.write("Upload a PDF and ask questions from the document")
@@ -172,7 +175,7 @@ Question:
                 # Generate response
                 final_prompt = prompt.invoke({
                     "context": context,
-                    "question": query
+                    "question": query 
                 })
 
                 response = llm.invoke(final_prompt)
